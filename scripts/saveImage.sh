@@ -266,14 +266,32 @@ deactivate_python_venv
 
 # The flow above re-saves the image via OpenCV, which drops the camera's EXIF.
 # Write the capture settings back so they travel with the file.  ISO ~= gain x 100.
+# Values with no standard EXIF tag go in UserComment as KEY=VALUE pairs.
+# Install-specific static tags (e.g. -FocalLength=2.72) go one per line in
+# config/exif.args, an exiftool argument file.
 if [[ -n ${AS_EXPOSURE_US} ]] && command -v exiftool > /dev/null ; then
+	EXIF_EXTRA=()
+	[[ -f ${ALLSKY_CONFIG}/exif.args ]] && EXIF_EXTRA+=( -@ "${ALLSKY_CONFIG}/exif.args" )
+	EXIF_COMMENT="MODE=${DAY_OR_NIGHT}"
+	for V in GAIN AUTOEXPOSURE AUTOGAIN AUTOWB WBR WBB MEAN TEMPERATURE_C ; do
+		N="AS_${V}"
+		[[ -n ${!N} ]] && EXIF_COMMENT+=" ${V}=${!N}"
+	done
+	# exiftool takes AllSky's "59.4N" or signed "-59.4" forms for both value and Ref.
+	[[ -n ${S_latitude} && -n ${S_longitude} ]] && EXIF_EXTRA+=(
+		-GPSLatitude="${S_latitude}" -GPSLatitudeRef="${S_latitude}"
+		-GPSLongitude="${S_longitude}" -GPSLongitudeRef="${S_longitude}" )
 	exiftool -q -q -overwrite_original \
-		-Make="${AS_CAMERA_TYPE}" -Model="${AS_CAMERA_MODEL}" \
+		-Make="${AS_CAMERA_TYPE}" -Model="${AS_CAMERA_MODEL}" -LensModel="${S_lens}" \
+		-Software="Allsky ${ALLSKY_VERSION}" -Artist="${S_owner}" -Copyright="${S_owner}" \
 		-ExposureTime="$( awk "BEGIN { print ${AS_EXPOSURE_US} / 1000000 }" )" \
 		-ISO="$( awk "BEGIN { printf \"%d\", ${AS_GAIN:-1} * 100 + 0.5 }" )" \
-		-UserComment="Gain ${AS_GAIN}" \
+		-ExposureMode#="$( [[ ${AS_AUTOEXPOSURE} == "1" ]] && echo 0 || echo 1 )" \
+		-WhiteBalance#="$( [[ ${AS_AUTOWB} == "1" ]] && echo 0 || echo 1 )" \
+		-UserComment="${EXIF_COMMENT}" \
 		-DateTimeOriginal="${AS_DATE:0:4}:${AS_DATE:4:2}:${AS_DATE:6:2} ${AS_TIME:0:2}:${AS_TIME:2:2}:${AS_TIME:4:2}" \
 		-OffsetTimeOriginal="$( date +%:z )" \
+		"${EXIF_EXTRA[@]}" \
 		"${CURRENT_IMAGE}" || W_ "*** ${ME}: WARNING: Unable to write EXIF; continuing."
 fi
 
