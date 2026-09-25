@@ -264,6 +264,19 @@ activate_python_venv
 python3 "${ALLSKY_SCRIPTS}/flow-runner.py"
 deactivate_python_venv
 
+# The flow above re-saves the image via OpenCV, which drops the camera's EXIF.
+# Write the capture settings back so they travel with the file.  ISO ~= gain x 100.
+if [[ -n ${AS_EXPOSURE_US} ]] && command -v exiftool > /dev/null ; then
+	exiftool -q -q -overwrite_original \
+		-Make="${AS_CAMERA_TYPE}" -Model="${AS_CAMERA_MODEL}" \
+		-ExposureTime="$( awk "BEGIN { print ${AS_EXPOSURE_US} / 1000000 }" )" \
+		-ISO="$( awk "BEGIN { printf \"%d\", ${AS_GAIN:-1} * 100 + 0.5 }" )" \
+		-UserComment="Gain ${AS_GAIN}" \
+		-DateTimeOriginal="${AS_DATE:0:4}:${AS_DATE:4:2}:${AS_DATE:6:2} ${AS_TIME:0:2}:${AS_TIME:2:2}:${AS_TIME:4:2}" \
+		-OffsetTimeOriginal="$( date +%:z )" \
+		"${CURRENT_IMAGE}" || W_ "*** ${ME}: WARNING: Unable to write EXIF; continuing."
+fi
+
 # The majority of the post-processing time for an image is in flow-runner.py.
 # Since only one mini-timelapse can run at once and that code is embeded in this code
 # in several places, remove our PID lock now.
